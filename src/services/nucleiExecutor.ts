@@ -251,6 +251,13 @@ export class NucleiExecutor extends EventEmitter {
     // Disable update checks
     args.push('-disable-update-check');
 
+    // Custom headers
+    if (this.authHeaders && Object.keys(this.authHeaders).length > 0) {
+      for (const [key, value] of Object.entries(this.authHeaders)) {
+        args.push('-H', `${key}: ${value}`);
+      }
+    }
+
     // Output to stdout (we're capturing it)
     // No -o flag needed since we're using stdout
 

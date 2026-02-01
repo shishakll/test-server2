@@ -1,18 +1,22 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useScanStore, useUIStore } from '@stores';
-import type { Vulnerability } from '@types';
-import { 
-  Shield, 
-  Activity, 
-  Target, 
-  AlertTriangle, 
-  Clock, 
-  TrendingUp, 
-  Calendar, 
-  Search, 
-  ArrowRight 
+import type { Vulnerability, VulnerabilitySummary } from '@types';
+import {
+  Shield,
+  Activity,
+  Target,
+  AlertTriangle,
+  Clock,
+  TrendingUp,
+  Calendar,
+  Search,
+  ArrowRight,
+  BarChart3,
+  PieChart,
+  Zap,
 } from 'lucide-react';
 import { formatDuration } from '@utils';
+import { SeverityChart, DonutChart, TrendLineChart } from '../components/Charts';
 
 /**
  * Format date to readable string
@@ -27,58 +31,77 @@ function formatDate(date: Date): string {
 }
 
 /**
- * Dashboard - Main dashboard with scan statistics and recent activity
+ * Dashboard - Main dashboard with scan statistics and charts
  */
 export const Dashboard: React.FC = () => {
-  const { vulnerabilities, scanHistory, isScanning } = useScanStore();
+  const { vulnerabilities, scanHistory, isScanning, scanState } = useScanStore();
   const { setActiveView } = useUIStore();
 
+  const severitySummary: VulnerabilitySummary = useMemo(() => {
+    return {
+      critical: vulnerabilities.filter((v: Vulnerability) => v.severity === 'critical').length,
+      high: vulnerabilities.filter((v: Vulnerability) => v.severity === 'high').length,
+      medium: vulnerabilities.filter((v: Vulnerability) => v.severity === 'medium').length,
+      low: vulnerabilities.filter((v: Vulnerability) => v.severity === 'low').length,
+      informational: vulnerabilities.filter((v: Vulnerability) => v.severity === 'informational').length,
+      total: vulnerabilities.length,
+    };
+  }, [vulnerabilities]);
+
   const stats = useMemo(() => {
-    const totalVulns = vulnerabilities.length;
-    const critical = vulnerabilities.filter((v: Vulnerability) => v.severity === 'critical').length;
-    const high = vulnerabilities.filter((v: Vulnerability) => v.severity === 'high').length;
     const avgScanTime = scanHistory.length > 0
       ? scanHistory.reduce((acc: number, s: { duration?: number }) => acc + (s.duration || 0), 0) / scanHistory.length
       : 0;
 
     return {
       totalScans: scanHistory.length,
-      totalVulnerabilities: totalVulns,
-      criticalCount: critical,
-      highCount: high,
+      totalVulnerabilities: severitySummary.total,
+      criticalCount: severitySummary.critical,
+      highCount: severitySummary.high,
+      mediumCount: severitySummary.medium,
       avgScanTime,
     };
-  }, [vulnerabilities, scanHistory]);
+  }, [severitySummary, scanHistory]);
 
-  const severityDistribution = [
-    { label: 'Critical', value: stats.criticalCount, color: '#dc2626', icon: AlertTriangle },
-    { label: 'High', value: stats.highCount, color: '#ea580c', icon: Target },
-    { label: 'Medium', value: vulnerabilities.filter((v: Vulnerability) => v.severity === 'medium').length, color: '#ca8a04', icon: Activity },
-    { label: 'Low', value: vulnerabilities.filter((v: Vulnerability) => v.severity === 'low').length, color: '#16a34a', icon: Shield },
-    { label: 'Info', value: vulnerabilities.filter((v: Vulnerability) => v.severity === 'informational').length, color: '#6b7280', icon: Clock },
-  ];
+  // Generate trend data from scan history
+  const vulnerabilityTrend = useMemo(() => {
+    return scanHistory.slice(-10).map((scan) => {
+      // This would typically count vulnerabilities from the scan
+      return scan.nucleiFindings || 0;
+    });
+  }, [scanHistory]);
 
   const recentScans = scanHistory.slice(-5).reverse();
 
   return (
-    <div className="dashboard">
+    <div className="dashboard" style={{ padding: '24px', height: '100%', overflow: 'auto' }}>
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Dashboard</h1>
-          <p className="text-gray-500 dark:text-gray-400">Security scan overview and statistics</p>
+          <h1 style={{ fontSize: '24px', fontWeight: '700', color: '#fff', marginBottom: '4px' }}>
+            Dashboard
+          </h1>
+          <p style={{ fontSize: '14px', color: '#8b8b9e' }}>
+            Security scan overview and statistics
+          </p>
         </div>
         <button
           onClick={() => setActiveView('scan')}
           className="btn btn-primary"
+          disabled={isScanning}
         >
-          <Search className="w-4 h-4 mr-2" />
+          <Search className="w-4 h-4" style={{ marginRight: '8px' }} />
           New Scan
         </button>
       </div>
 
       {/* Stats Grid */}
-      <div className="stats-grid">
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+        gap: '16px',
+        marginBottom: '24px',
+      }}>
         <StatCard
           title="Total Scans"
           value={stats.totalScans}
@@ -111,107 +134,223 @@ export const Dashboard: React.FC = () => {
         />
       </div>
 
-      {/* Main Content */}
-      <div className="dashboard-content">
-        {/* Severity Distribution */}
-        <div className="card">
-          <div className="card-header">
-            <h3>Severity Distribution</h3>
+      {/* Charts Section */}
+      <div className="dashboard-charts">
+        {/* Severity Distribution Chart */}
+        <div className="chart-card">
+          <div className="chart-header">
+            <div>
+              <h3 className="chart-title">Severity Distribution</h3>
+              <p className="chart-subtitle">Vulnerabilities by severity level</p>
+            </div>
+            <BarChart3 className="w-5 h-5" style={{ color: '#8b8b9e' }} />
           </div>
-          <div className="card-body">
-            <div className="severity-chart">
-              {severityDistribution.map((item) => (
-                <div key={item.label} className="severity-bar-item">
-                  <div className="severity-label">
-                    <item.icon className="w-4 h-4" style={{ color: item.color }} />
-                    <span>{item.label}</span>
+          <SeverityChart summary={severitySummary} />
+        </div>
+
+        {/* Donut Chart */}
+        <div className="chart-card">
+          <div className="chart-header">
+            <div>
+              <h3 className="chart-title">Vulnerability Overview</h3>
+              <p className="chart-subtitle">Distribution breakdown</p>
+            </div>
+            <PieChart className="w-5 h-5" style={{ color: '#8b8b9e' }} />
+          </div>
+          <DonutChart summary={severitySummary} />
+        </div>
+
+        {/* Trend Chart */}
+        <div className="chart-card">
+          <div className="chart-header">
+            <div>
+              <h3 className="chart-title">Scan Trend</h3>
+              <p className="chart-subtitle">Recent findings over time</p>
+            </div>
+            <TrendingUp className="w-5 h-5" style={{ color: '#8b8b9e' }} />
+          </div>
+          {vulnerabilityTrend.length > 0 ? (
+            <TrendLineChart data={vulnerabilityTrend} height={100} />
+          ) : (
+            <div style={{ padding: '40px 0', textAlign: 'center', color: '#8b8b9e' }}>
+              <BarChart3 className="w-12 h-12 mx-auto mb-3" style={{ opacity: 0.3 }} />
+              <p>No scan history yet</p>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Recent Scans */}
+      <div className="card" style={{
+        background: 'rgba(255, 255, 255, 0.03)',
+        border: '1px solid rgba(255, 255, 255, 0.08)',
+        borderRadius: '16px',
+        marginBottom: '24px',
+      }}>
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '20px 24px',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+        }}>
+          <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#fff' }}>Recent Scans</h3>
+          <button
+            onClick={() => setActiveView('scan')}
+            className="btn btn-ghost btn-sm"
+          >
+            View All <ArrowRight className="w-4 h-4" style={{ marginLeft: '4px' }} />
+          </button>
+        </div>
+        <div style={{ padding: '16px 24px' }}>
+          {recentScans.length > 0 ? (
+            <div className="scan-history-chart">
+              {recentScans.map((scan) => (
+                <div key={scan.id} className="history-item">
+                  <span className="history-date">{formatDate(scan.startTime)}</span>
+                  <span className="history-target">
+                    {scan.targetUrl || scan.targetHosts?.join(', ') || 'Unknown'}
+                  </span>
+                  <div className="history-counts">
+                    {scan.status === 'completed' && (
+                      <>
+                        <span className="history-count critical">
+                          <Zap className="w-3 h-3" /> {scan.nucleiFindings || 0}
+                        </span>
+                      </>
+                    )}
                   </div>
-                  <div className="severity-bar-container">
-                    <div
-                      className="severity-bar"
-                      style={{
-                        width: `${stats.totalVulnerabilities > 0 ? (item.value / stats.totalVulnerabilities) * 100 : 0}%`,
-                        backgroundColor: item.color,
-                      }}
-                    />
-                    <span className="severity-value">{item.value}</span>
-                  </div>
+                  <span style={{
+                    padding: '4px 10px',
+                    borderRadius: '20px',
+                    fontSize: '12px',
+                    fontWeight: '500',
+                    background: scan.status === 'completed'
+                      ? 'rgba(16, 185, 129, 0.15)'
+                      : scan.status === 'failed'
+                        ? 'rgba(239, 68, 68, 0.15)'
+                        : 'rgba(245, 158, 11, 0.15)',
+                    color: scan.status === 'completed'
+                      ? '#10b981'
+                      : scan.status === 'failed'
+                        ? '#ef4444'
+                        : '#f59e0b',
+                  }}>
+                    {scan.status}
+                  </span>
                 </div>
               ))}
             </div>
-          </div>
-        </div>
-
-        {/* Recent Scans */}
-        <div className="card">
-          <div className="card-header">
-            <h3>Recent Scans</h3>
-            <button
-              onClick={() => setActiveView('scan')}
-              className="btn btn-ghost"
-            >
-              View All <ArrowRight className="w-4 h-4 ml-1" />
-            </button>
-          </div>
-          <div className="card-body">
-            {recentScans.length > 0 ? (
-              <div className="recent-scans">
-                {recentScans.map((scan) => (
-                  <div key={scan.id} className="recent-scan-item">
-                    <div className="scan-info">
-                      <h4>{scan.targetUrl || scan.targetHosts?.join(', ') || 'Unknown'}</h4>
-                      <p className="scan-meta">
-                        {formatDate(scan.startTime)} &bull; {formatDuration(scan.duration || 0)}
-                      </p>
-                    </div>
-                    <div className={`scan-status ${scan.status}`}>
-                      {scan.status === 'completed' ? (
-                        <span className="badge badge-success">Completed</span>
-                      ) : scan.status === 'failed' ? (
-                        <span className="badge badge-error">Failed</span>
-                      ) : scan.status === 'cancelled' ? (
-                        <span className="badge badge-warning">Cancelled</span>
-                      ) : (
-                        <span className="badge badge-info">{scan.status}</span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="empty-state">
-                <Search className="w-12 h-12 text-gray-300" />
-                <p>No scans yet</p>
-                <button
-                  onClick={() => setActiveView('scan')}
-                  className="btn btn-primary"
-                >
-                  Start Your First Scan
-                </button>
-              </div>
-            )}
-          </div>
+          ) : (
+            <div className="empty-state" style={{ padding: '40px 20px' }}>
+              <Search className="w-12 h-12" style={{ color: '#5a5a6e', marginBottom: '16px' }} />
+              <p style={{ color: '#8b8b9e', marginBottom: '16px' }}>No scans yet</p>
+              <button
+                onClick={() => setActiveView('scan')}
+                className="btn btn-primary"
+              >
+                Start Your First Scan
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
       {/* Quick Actions */}
-      <div className="quick-actions">
-        <h3>Quick Actions</h3>
-        <div className="action-grid">
-          <button className="action-card" onClick={() => setActiveView('scan')}>
-            <Search className="w-8 h-8" />
-            <span>New Scan</span>
+      <div>
+        <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#fff', marginBottom: '16px' }}>
+          Quick Actions
+        </h3>
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+          gap: '12px',
+        }}>
+          <button
+            className="action-card"
+            onClick={() => setActiveView('scan')}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '12px',
+              padding: '20px',
+              background: 'rgba(255, 255, 255, 0.03)',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+              borderRadius: '12px',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+            }}
+          >
+            <Search className="w-8 h-8" style={{ color: '#6366f1' }} />
+            <span style={{ fontSize: '14px', fontWeight: '500', color: '#e0e0e0' }}>New Scan</span>
           </button>
-          <button className="action-card" onClick={() => setActiveView('settings')}>
-            <Shield className="w-8 h-8" />
-            <span>Settings</span>
+          <button
+            className="action-card"
+            onClick={() => setActiveView('results')}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '12px',
+              padding: '20px',
+              background: 'rgba(255, 255, 255, 0.03)',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+              borderRadius: '12px',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+            }}
+          >
+            <TrendingUp className="w-8 h-8" style={{ color: '#10b981' }} />
+            <span style={{ fontSize: '14px', fontWeight: '500', color: '#e0e0e0' }}>View Reports</span>
           </button>
-          <button className="action-card" onClick={() => setActiveView('results')}>
-            <TrendingUp className="w-8 h-8" />
-            <span>View Reports</span>
+          <button
+            className="action-card"
+            onClick={() => setActiveView('settings')}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '12px',
+              padding: '20px',
+              background: 'rgba(255, 255, 255, 0.03)',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
+              borderRadius: '12px',
+              cursor: 'pointer',
+              transition: 'all 0.2s',
+            }}
+          >
+            <Shield className="w-8 h-8" style={{ color: '#8b5cf6' }} />
+            <span style={{ fontSize: '14px', fontWeight: '500', color: '#e0e0e0' }}>Settings</span>
           </button>
         </div>
       </div>
+
+      {/* Active Scan Banner */}
+      {isScanning && scanState && (
+        <div style={{
+          position: 'fixed',
+          bottom: '24px',
+          right: '24px',
+          padding: '16px 20px',
+          background: 'rgba(99, 102, 241, 0.15)',
+          border: '1px solid rgba(99, 102, 241, 0.3)',
+          borderRadius: '12px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '12px',
+        }}>
+          <Activity className="w-5 h-5 animate-pulse" style={{ color: '#6366f1' }} />
+          <div>
+            <span style={{ fontSize: '14px', fontWeight: '500', color: '#fff' }}>
+              Scan in Progress
+            </span>
+            <p style={{ fontSize: '12px', color: '#8b8b9e' }}>
+              {scanState.progress}% complete - {scanState.currentUrl || 'Processing...'}
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -225,13 +364,29 @@ const StatCard: React.FC<{
   icon: React.FC<{ className?: string }>;
   color: string;
 }> = ({ title, value, icon: Icon, color }) => (
-  <div className="stat-card">
-    <div className="stat-icon" style={{ backgroundColor: `${color}15`, color }}>
-      <Icon className="w-6 h-6" />
+  <div className="stat-card" style={{
+    background: 'rgba(255, 255, 255, 0.03)',
+    border: '1px solid rgba(255, 255, 255, 0.08)',
+    borderRadius: '12px',
+    padding: '20px',
+    display: 'flex',
+    alignItems: 'center',
+    gap: '16px',
+  }}>
+    <div style={{
+      width: '48px',
+      height: '48px',
+      borderRadius: '12px',
+      background: `${color}15`,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+    }}>
+      <Icon className="w-6 h-6" style={{ color }} />
     </div>
-    <div className="stat-content">
-      <span className="stat-value">{value}</span>
-      <span className="stat-title">{title}</span>
+    <div style={{ display: 'flex', flexDirection: 'column' }}>
+      <span style={{ fontSize: '24px', fontWeight: '700', color: '#fff' }}>{value}</span>
+      <span style={{ fontSize: '13px', color: '#8b8b9e' }}>{title}</span>
     </div>
   </div>
 );

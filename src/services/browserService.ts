@@ -498,6 +498,61 @@ export class BrowserService extends EventEmitter {
   }
 
   /**
+   * Take a screenshot of the page
+   */
+  async takeScreenshot(options?: {
+    path?: string;
+    fullPage?: boolean;
+    clip?: { x: number; y: number; width: number; height: number };
+  }): Promise<Buffer> {
+    if (!this.window) throw new Error('Window not created');
+
+    const image = await this.window.webContents.capturePage(options?.clip);
+
+    if (options?.path) {
+      const { writeFile } = await import('fs/promises');
+      await writeFile(options.path, image.toPNG());
+    }
+
+    return image.toPNG();
+  }
+
+  /**
+   * Save page as PDF
+   */
+  async saveAsPDF(path: string, options?: {
+    marginsType?: 0 | 1 | 2;
+    pageSize?: { width: number; height: number };
+    printBackground?: boolean;
+    scale?: number;
+  }): Promise<void> {
+    if (!this.window) throw new Error('Window not created');
+
+    await this.window.webContents.printToPDF({
+      marginsType: options?.marginsType || 0,
+      pageSize: options?.pageSize || { width: 8.5 * 96, height: 11 * 96 }, // Letter size in pixels
+      printBackground: options?.printBackground ?? true,
+      scale: options?.scale || 1,
+      preferCSSPageSize: false,
+    });
+  }
+
+  /**
+   * Get page HTML
+   */
+  async getPageHTML(): Promise<string> {
+    if (!this.window) throw new Error('Window not created');
+    return await this.window.webContents.executeJavaScript('document.documentElement.outerHTML');
+  }
+
+  /**
+   * Get page title
+   */
+  getPageTitle(): string {
+    return this.window?.webContents.getTitle() || '';
+  }
+
+  /**
    * Show dev tools
    */
   async openDevTools(mode: 'detach' | 'right' | 'bottom' = 'detach'): Promise<void> {

@@ -25,6 +25,7 @@
   "author": "Security Team",
   "license": "MIT",
   "dependencies": {
+    "dockerode": "^4.0.9",
     "electron": "^35.0.0",
     "keytar": "^7.9.0",
     "lucide-react": "^0.563.0",
@@ -33,6 +34,7 @@
     "zustand": "^5.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.1",
     "@testing-library/react": "^16.3.2",
     "@types/keytar": "^4.4.0",
     "@types/node": "^22.0.0",

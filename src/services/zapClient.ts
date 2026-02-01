@@ -1,5 +1,6 @@
 import { EventEmitter } from 'events';
 import { spawn, ChildProcess } from 'child_process';
+import Dockerode from 'dockerode';
 import type {
   Vulnerability,
   ProxyConfig,
@@ -83,22 +84,64 @@ export class ZAPClient extends EventEmitter {
    * Start ZAP via Docker
    */
   private async startDocker(): Promise<void> {
-    // In a real implementation:
-    // const dockerode = require('dockerode');
-    // const docker = new dockerode();
-    // const container = await docker.createContainer({
-    //   Image: 'owasp/zap2docker-stable',
-    //   ExposedPorts: { '8080/tcp': {} },
-    //   HostConfig: {
-    //     PortBindings: { '8080/tcp': [{ HostPort: this.proxyPort.toString() }] },
-    //     AutoRemove: true,
-    //   },
-    //   Cmd: ['zap.sh', '-daemon', '-port', this.apiPort.toString()],
-    // });
-    // this.dockerContainerId = container.id;
-    // await container.start();
+    this.emit('dockerStarting');
 
-    this.emit('dockerStarted');
+    const docker = new Dockerode();
+    const containerName = `zap-${Date.now()}`;
+
+    try {
+      // Check if ZAP container already exists
+      let container: Dockerode.Container | undefined;
+      try {
+        container = docker.getContainer(containerName);
+        await container.start();
+      } catch {
+        // Create new container if it doesn't exist
+        const image = 'owasp/zap2docker-stable';
+
+        // Pull image if not exists
+        try {
+          await docker.getImage(image).inspect();
+        } catch {
+          this.emit('dockerPulling', { image });
+          const stream = await docker.createImage({
+            fromImage: image,
+          });
+          await new Promise<void>((resolve, reject) => {
+            docker.modem.followProgress(stream, (err) => {
+              if (err) reject(err);
+              else resolve();
+            });
+          });
+        }
+
+        container = await docker.createContainer({
+          Image: image,
+          name: containerName,
+          ExposedPorts: {
+            '8080/tcp': {},
+            '8090/tcp': {},
+          },
+          HostConfig: {
+            PortBindings: {
+              '8080/tcp': [{ HostPort: this.proxyPort.toString() }],
+              '8090/tcp': [{ HostPort: this.apiPort.toString() }],
+            },
+            AutoRemove: true,
+            Binds: this.homeDirectory ? [`${this.homeDirectory}:/home/zap/.ZAP:ro`] : [],
+          },
+          Cmd: ['zap.sh', '-daemon', '-port', this.apiPort.toString(), '-config', 'api.addrs.addr.name=.*'],
+        });
+
+        this.dockerContainerId = container.id;
+        await container.start();
+      }
+
+      this.emit('dockerStarted', { containerId: container?.id });
+    } catch (error) {
+      this.emit('dockerError', error);
+      throw new Error(`Failed to start ZAP Docker container: ${error}`);
+    }
   }
 
   /**
@@ -113,19 +156,46 @@ export class ZAPClient extends EventEmitter {
       '-config', `api.addrs.addr.port=${this.apiPort}`,
     ];
 
-    // In a real implementation:
-    // this.zapProcess = spawn(zapPath, args, {
-    //   stdio: ['ignore', 'pipe', 'pipe'],
-    //   detached: false,
-    // });
-    // this.zapProcess.stdout.on('data', (data) => this.emit('stdout', data));
-    // this.zapProcess.stderr.on('data', (data) => this.emit('stderr', data));
-    // this.zapProcess.on('close', (code) => {
-    //   this.isRunning = false;
-    //   this.emit('stopped', { code });
-    // });
+    return new Promise((resolve, reject) => {
+      this.emit('nativeStarting', { zapPath, args });
 
-    this.emit('nativeStarted');
+      this.zapProcess = spawn(zapPath, args, {
+        stdio: ['ignore', 'pipe', 'pipe'],
+        detached: false,
+        env: { ...process.env, JAVA_HOME: process.env.JAVA_HOME || '/usr/lib/jvm/java-11-openjdk-amd64' },
+      });
+
+      if (!this.zapProcess || !this.zapProcess.stdout || !this.zapProcess.stderr) {
+        reject(new Error('Failed to spawn ZAP process'));
+        return;
+      }
+
+      this.zapProcess.stdout.on('data', (data) => {
+        const message = data.toString().trim();
+        this.emit('stdout', message);
+        console.log(`[ZAP] ${message}`);
+      });
+
+      this.zapProcess.stderr.on('data', (data) => {
+        const message = data.toString().trim();
+        this.emit('stderr', message);
+        console.error(`[ZAP] ${message}`);
+      });
+
+      this.zapProcess.on('error', (error) => {
+        this.emit('error', error);
+        reject(new Error(`Failed to start ZAP: ${error.message}`));
+      });
+
+      this.zapProcess.on('close', (code) => {
+        if (code !== null && code !== 0) {
+          this.emit('closed', { code });
+        }
+      });
+
+      this.emit('nativeStarted');
+      resolve();
+    });
   }
 
   /**
@@ -573,6 +643,61 @@ export class ZAPClient extends EventEmitter {
   }
 
   /**
+   * Convert ZAP alerts to Vulnerability format
+   */
+  async getVulnerabilities(): Promise<Vulnerability[]> {
+    const alerts = await this.getAlerts({ count: 0 });
+
+    return alerts.map((alert, index) => ({
+      id: `zap-${alert.pluginId}-${index}`,
+      source: 'zap' as const,
+      templateId: alert.pluginId,
+      name: alert.name,
+      description: alert.description,
+      severity: this.mapRiskToSeverity(alert.risk),
+      confidence: this.mapConfidence(alert.confidence),
+      url: alert.url,
+      method: alert.method,
+      param: alert.param,
+      evidence: alert.evidence,
+      timestamp: new Date(),
+      cwe: alert.cweid || undefined,
+      cvss: undefined,
+      remediation: alert.solution,
+    }));
+  }
+
+  /**
+   * Map ZAP risk level to severity
+   */
+  private mapRiskToSeverity(risk: string): Vulnerability['severity'] {
+    switch (risk.toLowerCase()) {
+      case 'high':
+        return 'critical';
+      case 'medium':
+        return 'high';
+      case 'low':
+        return 'medium';
+      default:
+        return 'low';
+    }
+  }
+
+  /**
+   * Map ZAP confidence to our confidence
+   */
+  private mapConfidence(confidence: string): Vulnerability['confidence'] {
+    switch (confidence.toLowerCase()) {
+      case 'high':
+        return 'high';
+      case 'medium':
+        return 'medium';
+      default:
+        return 'low';
+    }
+  }
+
+  /**
    * Shutdown ZAP
    */
   async shutdown(): Promise<void> {
@@ -590,14 +715,22 @@ export class ZAPClient extends EventEmitter {
    * Shutdown Docker container
    */
   private async shutdownDocker(): Promise<void> {
-    // In a real implementation:
-    // const dockerode = require('dockerode');
-    // const docker = new dockerode();
-    // const container = docker.getContainer(this.dockerContainerId);
-    // await container.stop();
-    // await container.remove();
+    if (!this.dockerContainerId) {
+      return;
+    }
 
-    this.emit('dockerStopped');
+    try {
+      const docker = new Dockerode();
+      const container = docker.getContainer(this.dockerContainerId);
+
+      // Stop and remove container
+      await container.stop({ t: 5 }).catch(() => {});
+      await container.remove({ v: true }).catch(() => {});
+
+      this.emit('dockerStopped');
+    } catch (error) {
+      this.emit('dockerError', error);
+    }
   }
 
   /**
