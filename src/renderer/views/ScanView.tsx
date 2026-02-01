@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { useScanStore, useSettingsStore, useUIStore } from '@stores';
+import { useScanStore, useSettingsStore, useUIStore, useBulkScanStore } from '@stores';
 import type { ScanConfig } from '@types';
-import { Zap, Play, Settings, BarChart2, AlertTriangle, Loader } from 'lucide-react';
+import { Zap, Play, Settings, BarChart2, AlertTriangle, Loader, Layers } from 'lucide-react';
 import { ProgressBar } from '../components/ProgressBar';
 import { ResultsView } from './ResultsView';
+import { BulkScanInput } from '../components/BulkScanInput';
+import { BulkScanProgress } from '../components/BulkScanProgress';
 
 /**
  * ScanView - Main scan configuration and execution component
@@ -18,10 +20,13 @@ export const ScanView: React.FC = () => {
     cancelScan,
   } = useScanStore();
 
+  const { bulkScanState, aggregateVulnerabilities } = useBulkScanStore();
+
   const { setActiveView } = useUIStore();
 
-  const [activeTab, setActiveTab] = useState<'config' | 'progress' | 'results'>('config');
+  const [activeTab, setActiveTab] = useState<'config' | 'progress' | 'results' | 'bulk'>('config');
   const [config, setConfig] = useState<ScanConfig | null>(null);
+  const [scanMode, setScanMode] = useState<'single' | 'bulk'>('single');
 
   // Handle scan state changes
   useEffect(() => {
@@ -31,6 +36,13 @@ export const ScanView: React.FC = () => {
       setActiveTab('results');
     }
   }, [isScanning, vulnerabilities.length]);
+
+  // Handle bulk scan state changes
+  useEffect(() => {
+    if (bulkScanState.bulkScanId) {
+      setActiveTab('bulk');
+    }
+  }, [bulkScanState.bulkScanId]);
 
   const handleStartScan = useCallback(() => {
     if (config) {
@@ -47,6 +59,8 @@ export const ScanView: React.FC = () => {
     console.log('Uploading to DefectDojo');
     // TODO: Implement DefectDojo upload
   }, []);
+
+  const hasResults = vulnerabilities.length > 0 || aggregateVulnerabilities.length > 0;
 
   return (
     <div className="scan-view">
@@ -74,33 +88,64 @@ export const ScanView: React.FC = () => {
         </div>
       </div>
 
+      {/* Scan Mode Toggle */}
+      <div className="scan-mode-toggle">
+        <button
+          className={`mode-btn ${scanMode === 'single' ? 'active' : ''}`}
+          onClick={() => setScanMode('single')}
+        >
+          <Play className="w-4 h-4" />
+          Single Target
+        </button>
+        <button
+          className={`mode-btn ${scanMode === 'bulk' ? 'active' : ''}`}
+          onClick={() => setScanMode('bulk')}
+        >
+          <Layers className="w-4 h-4" />
+          Multi-Target (Bulk)
+        </button>
+      </div>
+
       {/* Tabs */}
       <div className="tabs">
-        <button
-          className={`tab ${activeTab === 'config' ? 'active' : ''}`}
-          onClick={() => setActiveTab('config')}
-        >
-          Configuration
-        </button>
-        <button
-          className={`tab ${activeTab === 'progress' ? 'active' : ''}`}
-          onClick={() => setActiveTab('progress')}
-          disabled={!isScanning && !scanState}
-        >
-          Progress
-        </button>
-        <button
-          className={`tab ${activeTab === 'results' ? 'active' : ''}`}
-          onClick={() => setActiveTab('results')}
-          disabled={vulnerabilities.length === 0}
-        >
-          Results ({vulnerabilities.length})
-        </button>
+        {scanMode === 'single' && (
+          <>
+            <button
+              className={`tab ${activeTab === 'config' ? 'active' : ''}`}
+              onClick={() => setActiveTab('config')}
+            >
+              Configuration
+            </button>
+            <button
+              className={`tab ${activeTab === 'progress' ? 'active' : ''}`}
+              onClick={() => setActiveTab('progress')}
+              disabled={!isScanning && !scanState}
+            >
+              Progress
+            </button>
+            <button
+              className={`tab ${activeTab === 'results' ? 'active' : ''}`}
+              onClick={() => setActiveTab('results')}
+              disabled={vulnerabilities.length === 0}
+            >
+              Results ({vulnerabilities.length})
+            </button>
+          </>
+        )}
+
+        {scanMode === 'bulk' && (
+          <button
+            className={`tab ${activeTab === 'bulk' ? 'active' : ''}`}
+            onClick={() => setActiveTab('bulk')}
+          >
+            {bulkScanState.bulkScanId ? 'Bulk Progress' : 'Bulk Configuration'}
+          </button>
+        )}
       </div>
 
       {/* Tab Content */}
       <div className="tab-content">
-        {activeTab === 'config' && (
+        {scanMode === 'single' && activeTab === 'config' && (
           <ScanConfigForm
             config={config}
             onConfigChange={setConfig}
@@ -109,7 +154,7 @@ export const ScanView: React.FC = () => {
           />
         )}
 
-        {activeTab === 'progress' && (
+        {scanMode === 'single' && activeTab === 'progress' && (
           <ProgressBar
             onPause={pauseScan}
             onResume={() => {}}
@@ -117,13 +162,67 @@ export const ScanView: React.FC = () => {
           />
         )}
 
-        {activeTab === 'results' && (
+        {scanMode === 'single' && activeTab === 'results' && (
           <ResultsView
             onDownloadReport={handleDownloadReport}
             onUploadDefectDojo={handleUploadDefectDojo}
           />
         )}
+
+        {scanMode === 'bulk' && (
+          <>
+            {!bulkScanState.bulkScanId ? (
+              <BulkScanInput
+                onScanStart={(config) => console.log('Bulk scan started:', config)}
+                disabled={isScanning}
+              />
+            ) : (
+              <BulkScanProgress
+                onComplete={() => {
+                  console.log('Bulk scan completed');
+                }}
+              />
+            )}
+          </>
+        )}
       </div>
+
+      <style>{`
+        .scan-mode-toggle {
+          display: flex;
+          gap: 0.5rem;
+          margin-bottom: 1.5rem;
+          padding: 0.25rem;
+          background: #1a1a2e;
+          border-radius: 10px;
+          width: fit-content;
+        }
+
+        .mode-btn {
+          display: flex;
+          align-items: center;
+          gap: 0.5rem;
+          padding: 0.75rem 1.5rem;
+          border: none;
+          border-radius: 8px;
+          background: transparent;
+          color: #94a3b8;
+          font-size: 0.875rem;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+
+        .mode-btn.active {
+          background: #6366f1;
+          color: white;
+        }
+
+        .mode-btn:hover:not(.active) {
+          background: #2d2d44;
+          color: #fff;
+        }
+      `}</style>
     </div>
   );
 };

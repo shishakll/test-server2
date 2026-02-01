@@ -209,3 +209,66 @@ export interface ReportData {
     browserInfo: BrowserInfo;
   };
 }
+
+// Bulk Scan Types
+export type ScanQueueStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+
+export interface ScanQueueItem {
+  id: string;
+  bulkScanId: string;
+  index: number;
+  target: string;
+  status: ScanQueueStatus;
+  scanConfig: ScanConfig;
+  vulnerabilities: Vulnerability[];
+  error: string | null;
+  progress: number;
+  currentPhase?: ScanPhase;
+  startTime: Date | null;
+  endTime: Date | null;
+}
+
+export interface BulkScanConfig {
+  targets: string | string[]; // URLs, domains, or file path
+  mode: 'sequential' | 'parallel';
+  concurrency?: number;
+  scanType?: ScanType;
+  authMode?: 'none' | 'manual' | 'session';
+  sessionId?: string;
+  browserEngine?: 'electron' | 'playwright';
+  playwrightBrowser?: 'chromium' | 'firefox' | 'webkit';
+  nucleiTemplates?: string[];
+  nucleiAuth?: Record<string, string>;
+  assetDiscovery?: boolean;
+  zapOptions?: {
+    context: string;
+    policy: string;
+    customRules?: string[];
+  };
+}
+
+export interface BulkScanState {
+  bulkScanId: string | null;
+  isRunning: boolean;
+  isPaused: boolean;
+  isCancelled: boolean;
+  totalTargets: number;
+  completedTargets: number;
+  runningTargets: number;
+  pendingTargets: number;
+  failedTargets: number;
+  progress: number;
+  vulnerabilitiesFound: number;
+  criticalCount: number;
+  highCount: number;
+  startTime: Date | null;
+  endTime: Date | null;
+  queue: ScanQueueItem[];
+}
+
+export interface BulkScanEvent {
+  type: 'started' | 'progress' | 'completed' | 'failed' | 'cancelled' | 'paused' | 'resumed';
+  bulkScanId: string;
+  data: Partial<BulkScanState> | ScanQueueItem | Error;
+  timestamp: Date;
+}

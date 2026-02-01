@@ -1,5 +1,6 @@
 // Core Services
 export { ScanOrchestrator, getOrchestrator, resetOrchestrator } from './orchestrator';
+export { MultiTargetScanner, getMultiTargetScanner, resetMultiTargetScanner } from './multiTargetScanner';
 export { CredentialManager, getCredentialManager, Credential, ZapCredential, DefectDojoCredential, ProxyCredential, CredentialType } from './credentialManager';
 export { SessionManager, getSessionManager, SessionData, CookieData } from './sessionManager';
 

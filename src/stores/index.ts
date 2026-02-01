@@ -10,6 +10,9 @@ import type {
   AppSettings,
   ScanError,
   ProxyConfig,
+  BulkScanState,
+  ScanQueueItem,
+  BulkScanConfig,
 } from '../types';
 import { generateId } from '../utils';
 
@@ -510,3 +513,191 @@ export const selectScanDuration = (state: ScanStore): number | null => {
   const endTime = state.scanState.endTime ?? new Date();
   return endTime.getTime() - state.scanState.startTime.getTime();
 };
+
+// Bulk Scan Store
+interface BulkScanStore {
+  // State
+  bulkScanState: BulkScanState;
+  aggregateVulnerabilities: Vulnerability[];
+
+  // Actions
+  startBulkScan: (config: BulkScanConfig) => void;
+  pauseBulkScan: () => void;
+  resumeBulkScan: () => void;
+  cancelBulkScan: () => Promise<void>;
+  updateBulkProgress: (progress: number, completedTargets: number, vulnerabilitiesFound: number, criticalCount: number, highCount: number) => void;
+  updateTargetItem: (item: ScanQueueItem) => void;
+  completeBulkScan: () => void;
+  resetBulkScan: () => void;
+}
+
+const defaultBulkScanState: BulkScanState = {
+  bulkScanId: null,
+  isRunning: false,
+  isPaused: false,
+  isCancelled: false,
+  totalTargets: 0,
+  completedTargets: 0,
+  runningTargets: 0,
+  pendingTargets: 0,
+  failedTargets: 0,
+  progress: 0,
+  vulnerabilitiesFound: 0,
+  criticalCount: 0,
+  highCount: 0,
+  startTime: null,
+  endTime: null,
+  queue: [],
+};
+
+export const useBulkScanStore = create<BulkScanStore>((set, get) => ({
+  bulkScanState: defaultBulkScanState,
+  aggregateVulnerabilities: [],
+
+  startBulkScan: (config: BulkScanConfig) => {
+    const bulkScanId = generateId('bulk');
+    const targets = Array.isArray(config.targets)
+      ? config.targets
+      : config.targets.split(/[\n,]+/).map(t => t.trim()).filter(Boolean);
+
+    const queue: ScanQueueItem[] = targets.map((target, index) => ({
+      id: generateId('scan'),
+      bulkScanId,
+      index,
+      target,
+      status: 'pending',
+      scanConfig: {
+        id: generateId('scan'),
+        targetUrl: target.startsWith('http') ? target : `https://${target}`,
+        scanType: config.scanType || 'standard',
+        authMode: config.authMode || 'none',
+        browserEngine: config.browserEngine || 'playwright',
+        playwrightBrowser: config.playwrightBrowser || 'chromium',
+        scanOptions: {
+          passiveOnly: false,
+          activeScan: true,
+          ajaxSpider: true,
+          nucleiTemplates: config.nucleiTemplates || [],
+          assetDiscovery: config.assetDiscovery || false,
+          subdomainEnum: false,
+        },
+        zapOptions: config.zapOptions,
+      },
+      vulnerabilities: [],
+      error: null,
+      progress: 0,
+      startTime: null,
+      endTime: null,
+    }));
+
+    set({
+      bulkScanState: {
+        ...defaultBulkScanState,
+        bulkScanId,
+        isRunning: true,
+        totalTargets: queue.length,
+        pendingTargets: queue.length,
+        queue,
+        startTime: new Date(),
+      },
+      aggregateVulnerabilities: [],
+    });
+  },
+
+  pauseBulkScan: () => {
+    set(state => ({
+      bulkScanState: {
+        ...state.bulkScanState,
+        isPaused: true,
+        isRunning: true,
+      },
+    }));
+  },
+
+  resumeBulkScan: () => {
+    set(state => ({
+      bulkScanState: {
+        ...state.bulkScanState,
+        isPaused: false,
+        isRunning: true,
+      },
+    }));
+  },
+
+  cancelBulkScan: async () => {
+    const state = get();
+    set({
+      bulkScanState: {
+        ...state.bulkScanState,
+        isCancelled: true,
+        isRunning: false,
+        isPaused: false,
+        endTime: new Date(),
+      },
+    });
+  },
+
+  updateBulkProgress: (progress: number, completedTargets: number, vulnerabilitiesFound: number, criticalCount: number, highCount: number) => {
+    set(state => ({
+      bulkScanState: {
+        ...state.bulkScanState,
+        progress,
+        completedTargets,
+        vulnerabilitiesFound,
+        criticalCount,
+        highCount,
+        runningTargets: state.bulkScanState.totalTargets - completedTargets,
+      },
+    }));
+  },
+
+  updateTargetItem: (item: ScanQueueItem) => {
+    set(state => {
+      const queue = [...state.bulkScanState.queue];
+      const index = queue.findIndex(q => q.id === item.id);
+      if (index >= 0) {
+        queue[index] = item;
+      }
+
+      const pendingCount = queue.filter(q => q.status === 'pending').length;
+      const runningCount = queue.filter(q => q.status === 'running').length;
+      const completedCount = queue.filter(q => q.status === 'completed').length;
+      const failedCount = queue.filter(q => q.status === 'failed').length;
+
+      const newVulns = queue.reduce<Vulnerability[]>((acc, q) => {
+        return [...acc, ...q.vulnerabilities];
+      }, []);
+
+      return {
+        bulkScanState: {
+          ...state.bulkScanState,
+          queue,
+          pendingTargets: pendingCount,
+          runningTargets: runningCount,
+          completedTargets: completedCount,
+          failedTargets: failedCount,
+          progress: Math.round(((completedCount + failedCount) / queue.length) * 100),
+        },
+        aggregateVulnerabilities: newVulns,
+      };
+    });
+  },
+
+  completeBulkScan: () => {
+    set(state => ({
+      bulkScanState: {
+        ...state.bulkScanState,
+        isRunning: false,
+        isPaused: false,
+        endTime: new Date(),
+      },
+    }));
+  },
+
+  resetBulkScan: () => {
+    set({
+      bulkScanState: defaultBulkScanState,
+      aggregateVulnerabilities: [],
+    });
+  },
+}));

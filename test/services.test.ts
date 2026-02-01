@@ -65,6 +65,11 @@ describe('Services', () => {
       const { SessionManager } = await import('../src/services/sessionManager');
       expect(SessionManager).toBeDefined();
     });
+
+    it('should export MultiTargetScanner', async () => {
+      const { MultiTargetScanner } = await import('../src/services/multiTargetScanner');
+      expect(MultiTargetScanner).toBeDefined();
+    });
   });
 
   describe('PolicyEngine', () => {
@@ -175,6 +180,12 @@ describe('Services', () => {
       const client = new DefectDojoClient();
       expect(client).toBeDefined();
     });
+
+    it('should create MultiTargetScanner instance', async () => {
+      const { MultiTargetScanner } = await import('../src/services/multiTargetScanner');
+      const scanner = new MultiTargetScanner();
+      expect(scanner).toBeDefined();
+    });
   });
 
   describe('Service Events', () => {
@@ -201,6 +212,62 @@ describe('Services', () => {
       const executor = new NucleiExecutor();
       
       expect(typeof executor.dispose).toBe('function');
+    });
+  });
+
+  describe('MultiTargetScanner', () => {
+    it('should have EventEmitter methods', async () => {
+      const { MultiTargetScanner } = await import('../src/services/multiTargetScanner');
+      const scanner = new MultiTargetScanner();
+      
+      expect(typeof scanner.on).toBe('function');
+      expect(typeof scanner.emit).toBe('function');
+      expect(typeof scanner.removeListener).toBe('function');
+    });
+
+    it('should have scan control methods', async () => {
+      const { MultiTargetScanner } = await import('../src/services/multiTargetScanner');
+      const scanner = new MultiTargetScanner();
+      
+      expect(typeof scanner.pauseBulkScan).toBe('function');
+      expect(typeof scanner.resumeBulkScan).toBe('function');
+      expect(typeof scanner.cancelBulkScan).toBe('function');
+    });
+
+    it('should have status and queue methods', async () => {
+      const { MultiTargetScanner } = await import('../src/services/multiTargetScanner');
+      const scanner = new MultiTargetScanner();
+      
+      expect(typeof scanner.getQueueStatus).toBe('function');
+      expect(typeof scanner.getQueueItems).toBe('function');
+      expect(typeof scanner.isBulkScanRunning).toBe('function');
+      expect(typeof scanner.isBulkScanPaused).toBe('function');
+    });
+
+    it('should have export and statistics methods', async () => {
+      const { MultiTargetScanner } = await import('../src/services/multiTargetScanner');
+      const scanner = new MultiTargetScanner();
+      
+      expect(typeof scanner.exportResults).toBe('function');
+      expect(typeof scanner.getStatistics).toBe('function');
+      expect(typeof scanner.getAggregateVulnerabilities).toBe('function');
+    });
+
+    it('should have concurrency setter', async () => {
+      const { MultiTargetScanner } = await import('../src/services/multiTargetScanner');
+      const scanner = new MultiTargetScanner();
+      
+      expect(typeof scanner.setConcurrency).toBe('function');
+    });
+
+    it('should create singleton instance', async () => {
+      const { getMultiTargetScanner, resetMultiTargetScanner } = await import('../src/services/multiTargetScanner');
+      resetMultiTargetScanner();
+      
+      const scanner1 = getMultiTargetScanner();
+      const scanner2 = getMultiTargetScanner();
+      
+      expect(scanner1).toBe(scanner2);
     });
   });
 });

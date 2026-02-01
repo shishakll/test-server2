@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { useScanStore, useUIStore } from '@stores';
+import { useScanStore, useUIStore, useBulkScanStore } from '@stores';
 import type { Vulnerability, VulnerabilitySummary } from '@types';
 import {
   Shield,
@@ -14,6 +14,7 @@ import {
   BarChart3,
   PieChart,
   Zap,
+  Layers,
 } from 'lucide-react';
 import { formatDuration } from '@utils';
 import { SeverityChart, DonutChart, TrendLineChart } from '../components/Charts';
@@ -35,18 +36,20 @@ function formatDate(date: Date): string {
  */
 export const Dashboard: React.FC = () => {
   const { vulnerabilities, scanHistory, isScanning, scanState } = useScanStore();
+  const { bulkScanState, aggregateVulnerabilities } = useBulkScanStore();
   const { setActiveView } = useUIStore();
 
   const severitySummary: VulnerabilitySummary = useMemo(() => {
+    const allVulns = [...vulnerabilities, ...aggregateVulnerabilities];
     return {
-      critical: vulnerabilities.filter((v: Vulnerability) => v.severity === 'critical').length,
-      high: vulnerabilities.filter((v: Vulnerability) => v.severity === 'high').length,
-      medium: vulnerabilities.filter((v: Vulnerability) => v.severity === 'medium').length,
-      low: vulnerabilities.filter((v: Vulnerability) => v.severity === 'low').length,
-      informational: vulnerabilities.filter((v: Vulnerability) => v.severity === 'informational').length,
-      total: vulnerabilities.length,
+      critical: allVulns.filter((v: Vulnerability) => v.severity === 'critical').length,
+      high: allVulns.filter((v: Vulnerability) => v.severity === 'high').length,
+      medium: allVulns.filter((v: Vulnerability) => v.severity === 'medium').length,
+      low: allVulns.filter((v: Vulnerability) => v.severity === 'low').length,
+      informational: allVulns.filter((v: Vulnerability) => v.severity === 'informational').length,
+      total: allVulns.length,
     };
-  }, [vulnerabilities]);
+  }, [vulnerabilities, aggregateVulnerabilities]);
 
   const stats = useMemo(() => {
     const avgScanTime = scanHistory.length > 0
@@ -132,7 +135,165 @@ export const Dashboard: React.FC = () => {
           icon={Clock}
           color="#8b5cf6"
         />
+        {bulkScanState.bulkScanId && (
+          <StatCard
+            title="Bulk Progress"
+            value={`${bulkScanState.progress}%`}
+            icon={Layers}
+            color="#6366f1"
+          />
+        )}
       </div>
+
+      {/* Bulk Scan Progress */}
+      {bulkScanState.bulkScanId && (
+        <div className="card" style={{
+          background: 'rgba(99, 102, 241, 0.08)',
+          border: '1px solid rgba(99, 102, 241, 0.2)',
+          borderRadius: '16px',
+          marginBottom: '24px',
+          overflow: 'hidden',
+        }}>
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '20px 24px',
+            borderBottom: '1px solid rgba(99, 102, 241, 0.2)',
+            background: 'rgba(99, 102, 241, 0.1)',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <Layers className="w-5 h-5" style={{ color: '#6366f1' }} />
+              <h3 style={{ fontSize: '16px', fontWeight: '600', color: '#fff' }}>
+                Bulk Scan in Progress
+              </h3>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{
+                padding: '4px 10px',
+                borderRadius: '20px',
+                fontSize: '12px',
+                fontWeight: '500',
+                background: bulkScanState.isPaused
+                  ? 'rgba(245, 158, 11, 0.15)'
+                  : 'rgba(16, 185, 129, 0.15)',
+                color: bulkScanState.isPaused ? '#f59e0b' : '#10b981',
+              }}>
+                {bulkScanState.isPaused ? 'Paused' : 'Running'}
+              </span>
+              <span style={{ fontSize: '14px', color: '#8b8b9e' }}>
+                {bulkScanState.progress}%
+              </span>
+            </div>
+          </div>
+          <div style={{ padding: '20px 24px' }}>
+            {/* Progress bar */}
+            <div style={{
+              height: '8px',
+              background: 'rgba(255, 255, 255, 0.1)',
+              borderRadius: '4px',
+              overflow: 'hidden',
+              marginBottom: '16px',
+            }}>
+              <div style={{
+                height: '100%',
+                width: `${bulkScanState.progress}%`,
+                background: 'linear-gradient(90deg, #6366f1, #8b5cf6)',
+                borderRadius: '4px',
+                transition: 'width 0.3s ease',
+              }} />
+            </div>
+
+            {/* Stats grid for bulk scan */}
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(5, 1fr)',
+              gap: '16px',
+            }}>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '20px', fontWeight: '700', color: '#fff' }}>
+                  {bulkScanState.completedTargets}
+                </div>
+                <div style={{ fontSize: '12px', color: '#8b8b9e' }}>Completed</div>
+              </div>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '20px', fontWeight: '700', color: '#60a5fa' }}>
+                  {bulkScanState.runningTargets}
+                </div>
+                <div style={{ fontSize: '12px', color: '#8b8b9e' }}>Running</div>
+              </div>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '20px', fontWeight: '700', color: '#64748b' }}>
+                  {bulkScanState.pendingTargets}
+                </div>
+                <div style={{ fontSize: '12px', color: '#8b8b9e' }}>Pending</div>
+              </div>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '20px', fontWeight: '700', color: '#ef4444' }}>
+                  {bulkScanState.failedTargets}
+                </div>
+                <div style={{ fontSize: '12px', color: '#8b8b9e' }}>Failed</div>
+              </div>
+              <div style={{ textAlign: 'center' }}>
+                <div style={{ fontSize: '20px', fontWeight: '700', color: '#f59e0b' }}>
+                  {aggregateVulnerabilities.length}
+                </div>
+                <div style={{ fontSize: '12px', color: '#8b8b9e' }}>Vulnerabilities</div>
+              </div>
+            </div>
+
+            {/* Quick targets preview */}
+            <div style={{
+              display: 'flex',
+              gap: '8px',
+              marginTop: '16px',
+              flexWrap: 'wrap',
+            }}>
+              {bulkScanState.queue.slice(0, 5).map((item) => (
+                <span
+                  key={item.id}
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: '6px',
+                    fontSize: '11px',
+                    background: item.status === 'completed'
+                      ? 'rgba(16, 185, 129, 0.15)'
+                      : item.status === 'failed'
+                        ? 'rgba(239, 68, 68, 0.15)'
+                        : item.status === 'running'
+                          ? 'rgba(59, 130, 246, 0.15)'
+                          : 'rgba(107, 114, 128, 0.15)',
+                    color: item.status === 'completed'
+                      ? '#10b981'
+                      : item.status === 'failed'
+                        ? '#ef4444'
+                        : item.status === 'running'
+                          ? '#60a5fa'
+                          : '#64748b',
+                  }}
+                >
+                  {item.target.slice(0, 25)}...
+                </span>
+              ))}
+              {bulkScanState.queue.length > 5 && (
+                <span style={{ fontSize: '11px', color: '#8b8b9e', padding: '4px' }}>
+                  +{bulkScanState.queue.length - 5} more
+                </span>
+              )}
+            </div>
+
+            {/* Action button */}
+            <div style={{ marginTop: '16px' }}>
+              <button
+                onClick={() => setActiveView('scan')}
+                className="btn btn-primary btn-sm"
+              >
+                View Details
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Charts Section */}
       <div className="dashboard-charts">
@@ -327,7 +488,7 @@ export const Dashboard: React.FC = () => {
       </div>
 
       {/* Active Scan Banner */}
-      {isScanning && scanState && (
+      {(isScanning || bulkScanState.isRunning) && (
         <div style={{
           position: 'fixed',
           bottom: '24px',
@@ -339,15 +500,23 @@ export const Dashboard: React.FC = () => {
           display: 'flex',
           alignItems: 'center',
           gap: '12px',
+          maxWidth: '400px',
         }}>
           <Activity className="w-5 h-5 animate-pulse" style={{ color: '#6366f1' }} />
           <div>
             <span style={{ fontSize: '14px', fontWeight: '500', color: '#fff' }}>
-              Scan in Progress
+              {bulkScanState.isRunning ? 'Bulk Scan in Progress' : 'Scan in Progress'}
             </span>
             <p style={{ fontSize: '12px', color: '#8b8b9e' }}>
-              {scanState.progress}% complete - {scanState.currentUrl || 'Processing...'}
+              {bulkScanState.isRunning
+                ? `${bulkScanState.completedTargets}/${bulkScanState.totalTargets} targets - ${bulkScanState.progress}%`
+                : `${scanState?.progress || 0}% complete - ${scanState?.currentUrl || 'Processing...'}`}
             </p>
+            {bulkScanState.isRunning && bulkScanState.criticalCount > 0 && (
+              <p style={{ fontSize: '11px', color: '#ef4444', marginTop: '4px' }}>
+                {bulkScanState.criticalCount} critical, {bulkScanState.highCount} high vulnerabilities found
+              </p>
+            )}
           </div>
         </div>
       )}
