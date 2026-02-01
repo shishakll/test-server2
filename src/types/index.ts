@@ -142,7 +142,7 @@ export interface AppSettings {
     rateLimit: number;
     concurrency: number;
   };
-  playwight: {
+  playwright: {
     browserPath?: string;
     headless: boolean;
   };

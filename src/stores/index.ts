@@ -26,7 +26,7 @@ const defaultSettings: AppSettings = {
     rateLimit: 150,
     concurrency: 25,
   },
-  playwight: {
+  playwright: {
     headless: true,
   },
   defectDojo: {

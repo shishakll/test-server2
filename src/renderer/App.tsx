@@ -1,6 +1,7 @@
 import React from 'react';
 import { useUIStore } from '@stores';
 import { Dashboard } from './views/Dashboard';
+import { ResultsView } from './views/ResultsView';
 import { ScanView } from './views/ScanView';
 import { Settings } from './views/Settings';
 import { Sidebar } from './components/Sidebar';
@@ -15,6 +16,8 @@ export const App: React.FC = () => {
     switch (activeView) {
       case 'dashboard':
         return <Dashboard />;
+      case 'results':
+        return <ResultsView />;
       case 'scan':
         return <ScanView />;
       case 'settings':
