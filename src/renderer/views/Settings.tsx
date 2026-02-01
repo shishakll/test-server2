@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
-import { useSettingsStore, useUIStore } from '@stores';
+import { useSettingsStore, useUIStore, useSessionStore } from '@stores';
 import type { ProxyConfig } from '@types';
-import { Settings as SettingsIcon, Shield, Globe, Key, Save, RefreshCw, Check, AlertTriangle } from 'lucide-react';
+import { Settings as SettingsIcon, Shield, Globe, Key, Save, RefreshCw, Check, AlertTriangle, Database } from 'lucide-react';
+import { PolicyManager } from '../components/PolicyManager';
+import { CredentialManagerUI } from '../components/CredentialManagerUI';
+import { SessionManagerUI } from '../components/SessionManagerUI';
 
 /**
  * Settings - Application settings configuration
@@ -44,6 +47,9 @@ export const Settings: React.FC = () => {
     { id: 'tools', label: 'Tool Paths', icon: Shield },
     { id: 'integrations', label: 'Integrations', icon: Key },
     { id: 'ai', label: 'AI Settings', icon: RefreshCw },
+    { id: 'policies', label: 'Policies', icon: Shield },
+    { id: 'credentials', label: 'Credentials', icon: Database },
+    { id: 'sessions', label: 'Sessions', icon: Key },
   ];
 
   return (
@@ -137,6 +143,18 @@ export const Settings: React.FC = () => {
             ai={ai}
             onAIChange={setAI}
           />
+        )}
+
+        {activeTab === 'policies' && (
+          <PolicyManager />
+        )}
+
+        {activeTab === 'credentials' && (
+          <CredentialManagerUI />
+        )}
+
+        {activeTab === 'sessions' && (
+          <SessionManagerUI />
         )}
       </div>
 
