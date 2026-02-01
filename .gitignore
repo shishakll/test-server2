@@ -12,6 +12,9 @@ Thumbs.db
 .cursor/
 .vscode/
 
+# Project specific
+.kiro/
+
 # Logs
 *.log
 npm-debug.log*
