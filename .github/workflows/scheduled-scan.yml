@@ -1,0 +1,126 @@
+name: Scheduled Security Scan
+
+on:
+  schedule:
+    # Run weekly on Sunday at 00:00 UTC
+    - cron: '0 0 * * 0'
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Target URL to scan'
+        required: true
+      scan_type:
+        description: 'Scan type'
+        required: false
+        default: 'standard'
+        type: choice
+        options:
+          - quick
+          - standard
+          - deep
+      severity_threshold:
+        description: 'Alert threshold'
+        required: false
+        default: 'high'
+        type: choice
+        options:
+          - critical
+          - high
+          - medium
+
+env:
+  TARGET_URL: ${{ github.event.inputs.target }}
+  SCAN_TYPE: ${{ github.event.inputs.scan_type || 'standard' }}
+  SEVERITY_THRESHOLD: ${{ github.event.inputs.severity_threshold || 'high' }}
+
+jobs:
+  scheduled-scan:
+    name: Scheduled Security Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Nuclei
+        run: |
+          curl -sSL https://github.com/projectdiscovery/nuclei/releases/latest/download/nuclei_linux_amd64.zip -o nuclei.zip
+          unzip -q nuclei.zip -d $HOME/.local/bin
+          rm nuclei.zip
+
+      - name: Install Subfinder
+        run: |
+          curl -sSL https://github.com/projectdiscovery/subfinder/releases/latest/download/subfinder_linux_amd64.zip -o subfinder.zip
+          unzip -q subfinder.zip -d $HOME/.local/bin
+          rm subfinder.zip
+
+      - name: Run Asset Discovery
+        id: asset-discovery
+        run: |
+          subfinder -d ${{ github.event.inputs.target }} -o subdomains.json
+
+      - name: Run Nuclei Scan
+        id: nuclei-scan
+        run: |
+          nuclei -d ${{ github.event.inputs.target }} \
+            -t ${{ github.workspace }}/nuclei-templates \
+            -o nuclei-results.json \
+            -jsonl \
+            -rate-limit 150
+
+      - name: Generate Summary
+        id: summary
+        run: |
+          echo "## Security Scan Report" > security-summary.md
+          echo "" >> security-summary.md
+          echo "**Scan Date:** $(date -u '+%Y-%m-%d %H:%M:%S UTC')" >> security-summary.md
+          echo "**Target:** ${{ github.event.inputs.target }}" >> security-summary.md
+          echo "" >> security-summary.md
+          echo "### Vulnerability Summary" >> security-summary.md
+          echo "" >> security-summary.md
+          echo '| Severity | Count |' >> security-summary.md
+          echo '|----------|-------|' >> security-summary.md
+          echo "| Critical | $(grep -c '\"severity\":\"critical\"' nuclei-results.json 2>/dev/null || echo 0) |" >> security-summary.md
+          echo "| High | $(grep -c '\"severity\":\"high\"' nuclei-results.json 2>/dev/null || echo 0) |" >> security-summary.md
+          echo "| Medium | $(grep -c '\"severity\":\"medium\"' nuclei-results.json 2>/dev/null || echo 0) |" >> security-summary.md
+          echo "| Low | $(grep -c '\"severity\":\"low\"' nuclei-results.json 2>/dev/null || echo 0) |" >> security-summary.md
+          cat security-summary.md
+
+      - name: Upload SARIF results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: nuclei-results.sarif
+          category: nuclei
+
+      - name: Upload Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-scan-results
+          path: |
+            nuclei-results.json
+            subdomains.json
+            security-summary.md
+
+      - name: Security Alert Check
+        run: |
+          CRITICAL=$(grep -c '"severity":"critical"' nuclei-results.json 2>/dev/null || echo 0)
+          HIGH=$(grep -c '"severity":"high"' nuclei-results.json 2>/dev/null || echo 0)
+          
+          if [ "$CRITICAL" -gt 0 ]; then
+            echo "::warning::Critical vulnerabilities found: $CRITICAL"
+          fi
+          if [ "$HIGH" -gt 0 ]; then
+            echo "::warning::High severity vulnerabilities found: $HIGH"
+          fi

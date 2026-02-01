@@ -1,0 +1,76 @@
+name: Security Scan
+
+on:
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Target URL to scan'
+        required: false
+        default: ''
+
+jobs:
+  security-scan:
+    name: Security Vulnerability Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Install Nuclei
+        run: |
+          curl -sSL https://github.com/projectdiscovery/nuclei/releases/latest/download/nuclei_linux_amd64.zip -o nuclei.zip
+          unzip -q nuclei.zip -d $HOME/.local/bin
+          rm nuclei.zip
+
+      - name: Run Nuclei Scan
+        id: nuclei-scan
+        run: |
+          nuclei -u ${{ github.event.inputs.target || 'https://example.com' }} \
+            -o nuclei-results.json \
+            -jsonl \
+            -rate-limit 150
+
+      - name: Parse Results
+        id: parse-results
+        run: |
+          if [ -f nuclei-results.json ]; then
+            CRITICAL=$(grep -c '"severity":"critical"' nuclei-results.json || echo 0)
+            HIGH=$(grep -c '"severity":"high"' nuclei-results.json || echo 0)
+            echo "CRITICAL=$CRITICAL" >> $GITHUB_OUTPUT
+            echo "HIGH=$HIGH" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Security Gate Check
+        run: |
+          CRITICAL=${{ steps.parse-results.outputs.CRITICAL || 0 }}
+          if [ "$CRITICAL" -gt 0 ]; then
+            echo "::error::Critical vulnerabilities found: $CRITICAL"
+            exit 1
+          fi
+
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci && npm test

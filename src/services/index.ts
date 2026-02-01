@@ -15,6 +15,9 @@ export { NucleiExecutor, getNucleiExecutor, resetNucleiExecutor } from './nuclei
 // Asset Discovery
 export { AssetDiscovery, getAssetDiscovery, resetAssetDiscovery } from './assetDiscovery';
 
+// Policy Engine
+export { PolicyEngine, getPolicyEngine, resetPolicyEngine, SecurityPolicy, PolicyRule, ValidationResult, ComplianceReport } from './policyEngine';
+
 // Reporting & Integration
 export { ReportGenerator, getReportGenerator, resetReportGenerator } from './reportGenerator';
 export { DefectDojoClient, getDefectDojoClient, resetDefectDojoClient } from './defectDojoClient';

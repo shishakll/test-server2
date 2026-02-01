@@ -159,21 +159,6 @@ export class CredentialManager {
   }
 
   /**
-   * List all stored credentials (without exposing the actual values)
-   */
-  async listAccounts(): Promise<string[]> {
-    try {
-      // keytar doesn't provide a direct list method, so we track accounts ourselves
-      // This is a simplified implementation - in production, you'd want to store
-      // the list of accounts in a separate secure location
-      return [];
-    } catch (error) {
-      console.error('Failed to list accounts:', error);
-      return [];
-    }
-  }
-
-  /**
    * Check if a credential exists
    */
   async hasCredential(account: string): Promise<boolean> {
@@ -292,7 +277,7 @@ export class CredentialManager {
       // In production, you'd want to track all accounts and delete them
       const accounts = await this.listAccounts();
       for (const account of accounts) {
-        await this.deletePassword(account);
+        await this.deletePassword(account.id);
       }
       return true;
     } catch (error) {

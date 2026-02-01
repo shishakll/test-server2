@@ -50,6 +50,99 @@ describe('Services', () => {
       const { DefectDojoClient } = await import('../src/services/defectDojoClient');
       expect(DefectDojoClient).toBeDefined();
     });
+
+    it('should export PolicyEngine', async () => {
+      const { PolicyEngine } = await import('../src/services/policyEngine');
+      expect(PolicyEngine).toBeDefined();
+    });
+
+    it('should export CredentialManager', async () => {
+      const { CredentialManager } = await import('../src/services/credentialManager');
+      expect(CredentialManager).toBeDefined();
+    });
+
+    it('should export SessionManager', async () => {
+      const { SessionManager } = await import('../src/services/sessionManager');
+      expect(SessionManager).toBeDefined();
+    });
+  });
+
+  describe('PolicyEngine', () => {
+    it('should load built-in policies', async () => {
+      const { getPolicyEngine, resetPolicyEngine } = await import('../src/services/policyEngine');
+      resetPolicyEngine();
+      const engine = getPolicyEngine();
+      const policies = engine.getPolicies();
+      expect(policies.length).toBeGreaterThan(0);
+    });
+
+    it('should have OWASP Top 10 policy', async () => {
+      const { getPolicyEngine, resetPolicyEngine } = await import('../src/services/policyEngine');
+      resetPolicyEngine();
+      const engine = getPolicyEngine();
+      const owaspPolicy = engine.getPolicy('owasp-top10-2021');
+      expect(owaspPolicy).toBeDefined();
+      expect(owaspPolicy?.name).toBe('OWASP Top 10 2021');
+    });
+
+    it('should have PCI-DSS policy', async () => {
+      const { getPolicyEngine, resetPolicyEngine } = await import('../src/services/policyEngine');
+      resetPolicyEngine();
+      const engine = getPolicyEngine();
+      const pciPolicy = engine.getPolicy('pci-dss-4.0');
+      expect(pciPolicy).toBeDefined();
+      expect(pciPolicy?.framework).toBe('PCI-DSS');
+    });
+
+    it('should validate vulnerabilities against policy', async () => {
+      const { getPolicyEngine, resetPolicyEngine } = await import('../src/services/policyEngine');
+      resetPolicyEngine();
+      const engine = getPolicyEngine();
+
+      const testVulnerabilities = [
+        { id: 'v1', source: 'nuclei', name: 'SQL Injection', severity: 'critical' as const, confidence: 'high' as const, url: 'http://test.com', method: 'GET', timestamp: new Date() },
+        { id: 'v2', source: 'zap', name: 'XSS', severity: 'high' as const, confidence: 'high' as const, url: 'http://test.com', method: 'GET', timestamp: new Date() },
+        { id: 'v3', source: 'nuclei', name: 'Info Disclosure', severity: 'low' as const, confidence: 'medium' as const, url: 'http://test.com', method: 'GET', timestamp: new Date() },
+      ];
+
+      const result = engine.validate(testVulnerabilities, 'quick-scan');
+      expect(result.policyId).toBe('quick-scan');
+      expect(result.summary).toBeDefined();
+    });
+
+    it('should create custom policy', async () => {
+      const { getPolicyEngine, resetPolicyEngine } = await import('../src/services/policyEngine');
+      resetPolicyEngine();
+      const engine = getPolicyEngine();
+
+      const customPolicy = engine.createPolicy({
+        name: 'Custom Test Policy',
+        description: 'A test policy for unit tests',
+        version: '1.0.0',
+        framework: 'Custom',
+        rules: [
+          { id: 'CT-001', name: 'Test Rule', severity: 'high', categories: ['test'] },
+        ],
+        compliance: { owasp: false, pciDss: false, hipaa: false, soc2: false },
+      });
+
+      expect(customPolicy.id).toBeDefined();
+      expect(customPolicy.name).toBe('Custom Test Policy');
+    });
+
+    it('should check compliance', async () => {
+      const { getPolicyEngine, resetPolicyEngine } = await import('../src/services/policyEngine');
+      resetPolicyEngine();
+      const engine = getPolicyEngine();
+
+      const testVulnerabilities = [
+        { id: 'v1', source: 'nuclei', name: 'SQL Injection', severity: 'critical' as const, confidence: 'high' as const, url: 'http://test.com', method: 'GET', timestamp: new Date() },
+      ];
+
+      const report = engine.checkCompliance(testVulnerabilities, 'quick-scan');
+      expect(report.policyId).toBe('quick-scan');
+      expect(report.score).toBeDefined();
+    });
   });
 
   describe('Service Instances', () => {
