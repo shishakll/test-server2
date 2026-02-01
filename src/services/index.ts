@@ -1,0 +1,20 @@
+// Core Services
+export { ScanOrchestrator, getOrchestrator, resetOrchestrator } from './orchestrator';
+export { CredentialManager, getCredentialManager } from './credentialManager';
+export { SessionManager, getSessionManager } from './sessionManager';
+
+// Browser Services
+export { BrowserService, getBrowserService, resetBrowserService } from './browserService';
+export { CDPService, getCDPService, resetCDPService } from './cdpService';
+export { PlaywrightManager, getPlaywrightManager, resetPlaywrightManager } from './playwrightManager';
+
+// Security Tool Services
+export { ZAPClient, getZAPClient, resetZAPClient } from './zapClient';
+export { NucleiExecutor, getNucleiExecutor, resetNucleiExecutor } from './nucleiExecutor';
+
+// Asset Discovery
+export { AssetDiscovery, getAssetDiscovery, resetAssetDiscovery } from './assetDiscovery';
+
+// Reporting & Integration
+export { ReportGenerator, getReportGenerator, resetReportGenerator } from './reportGenerator';
+export { DefectDojoClient, getDefectDojoClient, resetDefectDojoClient } from './defectDojoClient';

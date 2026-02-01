@@ -1,0 +1,40 @@
+{
+  "version": "1.0.0",
+  "tools": {
+    "zap": {
+      "name": "OWASP ZAP",
+      "version": "2.15.0",
+      "description": "Dynamic Application Security Testing tool",
+      "installMethod": "docker_or_manual",
+      "defaultPort": 8080,
+      "apiPort": 8080
+    },
+    "nuclei": {
+      "name": "Nuclei",
+      "version": "3.3.0",
+      "description": "Template-based vulnerability scanner",
+      "templatePath": "../tools/nuclei-templates",
+      "defaultRateLimit": 150,
+      "defaultConcurrency": 25
+    },
+    "subfinder": {
+      "name": "Subfinder",
+      "version": "2.7.0",
+      "description": "Passive subdomain enumeration tool"
+    },
+    "amass": {
+      "name": "Amass",
+      "version": "3.25.0",
+      "description": "Comprehensive subdomain enumeration"
+    },
+    "trivy": {
+      "name": "Trivy",
+      "version": "0.53.0",
+      "description": "Container and filesystem vulnerability scanner"
+    },
+    "nmap": {
+      "name": "Nmap",
+      "description": "Network exploration and security auditing"
+    }
+  }
+}
