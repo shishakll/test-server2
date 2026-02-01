@@ -27,8 +27,10 @@
   "dependencies": {
     "dockerode": "^4.0.9",
     "electron": "^35.0.0",
+    "handlebars": "^4.7.8",
     "keytar": "^7.9.0",
     "lucide-react": "^0.563.0",
+    "pdfkit": "^0.17.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "zustand": "^5.0.0"
@@ -38,6 +40,7 @@
     "@testing-library/react": "^16.3.2",
     "@types/keytar": "^4.4.0",
     "@types/node": "^22.0.0",
+    "@types/pdfkit": "^0.17.4",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",

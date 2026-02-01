@@ -1,7 +1,7 @@
 // Core Services
 export { ScanOrchestrator, getOrchestrator, resetOrchestrator } from './orchestrator';
-export { CredentialManager, getCredentialManager } from './credentialManager';
-export { SessionManager, getSessionManager } from './sessionManager';
+export { CredentialManager, getCredentialManager, Credential, ZapCredential, DefectDojoCredential, ProxyCredential, CredentialType } from './credentialManager';
+export { SessionManager, getSessionManager, SessionData, CookieData } from './sessionManager';
 
 // Browser Services
 export { BrowserService, getBrowserService, resetBrowserService } from './browserService';

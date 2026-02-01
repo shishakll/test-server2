@@ -355,6 +355,150 @@ export class SessionManager {
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   }
+
+  /**
+   * Validate a session (check if it's still usable)
+   */
+  async validateSession(sessionId: string): Promise<SessionValidation> {
+    const session = await this.loadSession(sessionId);
+    if (!session) {
+      return { valid: false, reason: 'Session not found' };
+    }
+
+    // Check if session is expired (30 days default)
+    const maxAge = 30 * 24 * 60 * 60 * 1000; // 30 days in ms
+    const age = Date.now() - session.createdAt.getTime();
+
+    if (age > maxAge) {
+      return { valid: false, reason: 'Session expired', expiredAt: session.createdAt };
+    }
+
+    // Check if session has cookies
+    if (session.cookies.length === 0) {
+      return { valid: false, reason: 'No cookies in session' };
+    }
+
+    // Check for expired cookies
+    const now = Date.now();
+    const expiredCookies = session.cookies.filter(c => c.expires && c.expires < now);
+
+    if (expiredCookies.length > 0 && expiredCookies.length === session.cookies.length) {
+      return { valid: false, reason: 'All cookies expired', expiredCount: expiredCookies.length };
+    }
+
+    return {
+      valid: true,
+      cookieCount: session.cookies.length,
+      age: age,
+      storageSize: Object.keys(session.localStorage).length + Object.keys(session.sessionStorage).length,
+    };
+  }
+
+  /**
+   * Clone session for a different target
+   */
+  async cloneSession(sourceSessionId: string, newTarget: string): Promise<SessionData | null> {
+    const sourceSession = await this.loadSession(sourceSessionId);
+    if (!sourceSession) return null;
+
+    // Create a new session with the same data but new ID and target
+    const clonedSession: SessionData = {
+      ...sourceSession,
+      id: generateId('session'),
+      name: `${sourceSession.name} (${newTarget})`,
+      createdAt: new Date(),
+      // Note: We don't modify cookies as they may be target-specific
+    };
+
+    await this.saveSession(clonedSession);
+    return clonedSession;
+  }
+
+  /**
+   * Merge two sessions (useful for combining authenticated sessions)
+   */
+  async mergeSessions(sessionId1: string, sessionId2: string, newName: string): Promise<SessionData | null> {
+    const session1 = await this.loadSession(sessionId1);
+    const session2 = await this.loadSession(sessionId2);
+
+    if (!session1 || !session2) return null;
+
+    // Merge cookies (session2 cookies take precedence for duplicates)
+    const cookieMap = new Map(session1.cookies.map(c => [`${c.domain}|${c.name}`, c]));
+    for (const cookie of session2.cookies) {
+      cookieMap.set(`${cookie.domain}|${cookie.name}`, cookie);
+    }
+
+    // Merge localStorage (session2 values take precedence)
+    const mergedLocalStorage = { ...session1.localStorage, ...session2.localStorage };
+
+    // Merge sessionStorage (session2 values take precedence)
+    const mergedSessionStorage = { ...session1.sessionStorage, ...session2.sessionStorage };
+
+    const mergedSession: SessionData = {
+      id: generateId('session'),
+      name: newName,
+      createdAt: new Date(),
+      cookies: Array.from(cookieMap.values()),
+      localStorage: mergedLocalStorage,
+      sessionStorage: mergedSessionStorage,
+    };
+
+    await this.saveSession(mergedSession);
+    return mergedSession;
+  }
+
+  /**
+   * Get session statistics
+   */
+  async getSessionStats(): Promise<SessionStats> {
+    const sessions = await this.listSessions();
+    const totalSize = await this.getTotalSize();
+
+    // Group by target
+    const byTarget: Record<string, number> = {};
+    for (const session of sessions) {
+      const domains = new Set(session.cookies.map(c => c.domain));
+      const target = domains.size > 0 ? Array.from(domains)[0] : 'unknown';
+      byTarget[target] = (byTarget[target] || 0) + 1;
+    }
+
+    // Calculate total cookies
+    const totalCookies = sessions.reduce((sum, s) => sum + s.cookies.length, 0);
+
+    // Find oldest and newest sessions
+    const sorted = sessions.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+
+    return {
+      totalSessions: sessions.length,
+      totalSize,
+      totalCookies,
+      sessionsByTarget: byTarget,
+      oldestSession: sorted[0]?.createdAt,
+      newestSession: sorted[sorted.length - 1]?.createdAt,
+    };
+  }
+}
+
+// Session validation result type
+interface SessionValidation {
+  valid: boolean;
+  reason?: string;
+  expiredAt?: Date;
+  expiredCount?: number;
+  cookieCount?: number;
+  age?: number;
+  storageSize?: number;
+}
+
+// Session statistics type
+interface SessionStats {
+  totalSessions: number;
+  totalSize: number;
+  totalCookies: number;
+  sessionsByTarget: Record<string, number>;
+  oldestSession?: Date;
+  newestSession?: Date;
 }
 
 // Export singleton getter

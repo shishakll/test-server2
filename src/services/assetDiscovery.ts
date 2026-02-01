@@ -578,11 +578,20 @@ export class AssetDiscovery extends EventEmitter {
       if (result.subdomains.length > 0) {
         this.emit('phase', { name: 'host-scanning' });
         result.hostScans = await this.scanHosts(result.subdomains);
+
+        // Check for subdomain takeovers
+        this.emit('phase', { name: 'subdomain-takeover-check' });
+        const takeoverVulns = await this.checkSubdomainTakeovers(result.subdomains);
+        result.vulnerabilities.push(...takeoverVulns);
       }
 
       // Discover API endpoints
       this.emit('phase', { name: 'api-discovery' });
       result.apiEndpoints = await this.discoverAPIs(domain);
+
+      // Resolve DNS for all discovered subdomains
+      this.emit('phase', { name: 'dns-resolution' });
+      result.dnsRecords = await this.resolveDNS(result.subdomains);
 
       // Scan ports for main domain
       this.emit('phase', { name: 'port-scanning' });
@@ -597,6 +606,126 @@ export class AssetDiscovery extends EventEmitter {
     }
 
     return result;
+  }
+
+  /**
+   * Check for subdomain takeover vulnerabilities
+   */
+  async checkSubdomainTakeovers(subdomains: string[]): Promise<Vulnerability[]> {
+    const vulnerabilities: Vulnerability[] = [];
+    const takeoverPatterns = [
+      { pattern: /github\.io/, service: 'GitHub Pages', vulnName: 'Subdomain Takeover - GitHub Pages' },
+      { pattern: /herokuapp\.com/, service: 'Heroku', vulnName: 'Subdomain Takeover - Heroku' },
+      { pattern: /azurewebsites\.net/, service: 'Azure', vulnName: 'Subdomain Takeover - Azure' },
+      { pattern: /cloudfront\.net/, service: 'CloudFront', vulnName: 'Subdomain Takeover - CloudFront' },
+      { pattern: /s3.amazonaws\.com/, service: 'AWS S3', vulnName: 'Subdomain Takeover - AWS S3' },
+      { pattern: /elasticbeanstalk\.com/, service: 'Elastic Beanstalk', vulnName: 'Subdomain Takeover - Elastic Beanstalk' },
+      { pattern: /github\.com/, service: 'GitHub', vulnName: 'Subdomain Takeover - GitHub' },
+      { pattern: /gitlab\.io/, service: 'GitLab Pages', vulnName: 'Subdomain Takeover - GitLab Pages' },
+      { pattern: /bitbucket\.org/, service: 'Bitbucket', vulnName: 'Subdomain Takeover - Bitbucket' },
+      { pattern: /netlify\.app/, service: 'Netlify', vulnName: 'Subdomain Takeover - Netlify' },
+      { pattern: /vercel\.app/, service: 'Vercel', vulnName: 'Subdomain Takeover - Vercel' },
+      { pattern: /surge\.sh/, service: 'Surge.sh', vulnName: 'Subdomain Takeover - Surge.sh' },
+      { pattern: /fly\.dev/, service: 'Fly.io', vulnName: 'Subdomain Takeover - Fly.io' },
+      { pattern: /render\.com/, service: 'Render', vulnName: 'Subdomain Takeover - Render' },
+      { pattern: /railway\.app/, service: 'Railway', vulnName: 'Subdomain Takeover - Railway' },
+    ];
+
+    for (const subdomain of subdomains) {
+      for (const { pattern, service, vulnName } of takeoverPatterns) {
+        if (pattern.test(subdomain)) {
+          vulnerabilities.push({
+            id: generateId('takeover'),
+            source: 'takeover',
+            name: vulnName,
+            description: `Potential subdomain takeover detected for ${subdomain}. The subdomain points to ${service} but the resource may not exist.`,
+            severity: 'high',
+            confidence: 'medium',
+            url: `https://${subdomain}`,
+            method: 'DNS_CHECK',
+            timestamp: new Date(),
+            remediation: `Remove the DNS record for ${subdomain} or claim the missing resource.`,
+          });
+          break;
+        }
+      }
+    }
+
+    this.emit('takeoverCheckCompleted', { subdomainsChecked: subdomains.length, vulnerabilitiesFound: vulnerabilities.length });
+    return vulnerabilities;
+  }
+
+  /**
+   * Resolve DNS records for subdomains
+   */
+  async resolveDNS(hostnames: string[]): Promise<DNSRecord[]> {
+    const records: DNSRecord[] = [];
+
+    for (const hostname of hostnames) {
+      try {
+        const { execSync } = await import('child_process');
+        const output = execSync(`dig +short ${hostname}`, { encoding: 'utf-8', timeout: 5000 }).trim();
+
+        if (output) {
+          const ips = output.split('\n').filter(ip => this.isValidIP(ip));
+          for (const ip of ips) {
+            records.push({
+              hostname,
+              type: ip.includes(':') ? 'AAAA' : 'A',
+              value: ip,
+              resolvedAt: new Date(),
+            });
+          }
+        }
+      } catch {
+        // DNS resolution failed, skip
+      }
+    }
+
+    return records;
+  }
+
+  /**
+   * Validate IP address
+   */
+  private isValidIP(ip: string): boolean {
+    const ipv4Regex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
+    const ipv6Regex = /^(?:[0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}$/;
+    return ipv4Regex.test(ip) || ipv6Regex.test(ip);
+  }
+
+  /**
+   * Get WHOIS information for domain
+   */
+  async getWhoisInfo(domain: string): Promise<WhoisInfo | null> {
+    try {
+      const { execSync } = await import('child_process');
+      const output = execSync(`whois ${domain}`, { encoding: 'utf-8', timeout: 10000 });
+
+      const info: WhoisInfo = {
+        domain,
+        raw: output,
+      };
+
+      // Parse key fields
+      const registrarMatch = output.match(/Registrar:\s*(.+)/i);
+      if (registrarMatch) info.registrar = registrarMatch[1].trim();
+
+      const creationMatch = output.match(/Creation Date:\s*(.+)/i);
+      if (creationMatch) info.createdAt = creationMatch[1].trim();
+
+      const expiryMatch = output.match(/Expir.*Date:\s*(.+)/i);
+      if (expiryMatch) info.expiresAt = expiryMatch[1].trim();
+
+      const nameServersMatch = output.match(/Name Server:\s*(.+)/gi);
+      if (nameServersMatch) {
+        info.nameServers = nameServersMatch.map(ns => ns.replace(/Name Server:\s*/i, '').trim());
+      }
+
+      return info;
+    } catch {
+      return null;
+    }
   }
 
   /**
@@ -652,8 +781,25 @@ interface DiscoveryResult {
   apiEndpoints: string[];
   hostScans: HostScanResult[];
   portScans: PortScanResult[];
+  dnsRecords: DNSRecord[];
   vulnerabilities: Vulnerability[];
   timestamp: Date;
+}
+
+interface DNSRecord {
+  hostname: string;
+  type: 'A' | 'AAAA' | 'CNAME' | 'MX' | 'TXT' | 'NS';
+  value: string;
+  resolvedAt: Date;
+}
+
+interface WhoisInfo {
+  domain: string;
+  registrar?: string;
+  createdAt?: string;
+  expiresAt?: string;
+  nameServers?: string[];
+  raw: string;
 }
 
 // Export singleton

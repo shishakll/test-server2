@@ -1,7 +1,13 @@
 import keytar from 'keytar';
+import { writeFileSync, readFileSync, existsSync } from 'fs';
+import { join } from 'path';
+import { generateId } from '../utils';
 
 // Service name for the application in keychain
 const SERVICE_NAME = 'security-scanner';
+
+// Account registry file for tracking stored credentials
+const ACCOUNT_REGISTRY = join(__dirname, '..', '..', '.credentials', 'accounts.json');
 
 /**
  * CredentialManager - Secure credential storage using OS keychain
@@ -10,6 +16,7 @@ const SERVICE_NAME = 'security-scanner';
  * - Authentication credentials (for authenticated scans)
  * - DefectDojo API keys
  * - Proxy authentication (if needed)
+ * - OAuth tokens
  *
  * Uses platform-specific keychain:
  * - macOS: Keychain
@@ -18,9 +25,83 @@ const SERVICE_NAME = 'security-scanner';
  */
 export class CredentialManager {
   private static instance: CredentialManager | null = null;
+  private accountRegistry: Map<string, CredentialMetadata> = new Map();
 
   private constructor() {
-    // Private constructor for singleton
+    // Load account registry
+    this.loadAccountRegistry();
+  }
+
+  /**
+   * Load account registry from disk
+   */
+  private loadAccountRegistry(): void {
+    try {
+      const registryDir = require('path').dirname(ACCOUNT_REGISTRY);
+      if (!require('fs').existsSync(registryDir)) {
+        require('fs').mkdirSync(registryDir, { recursive: true });
+      }
+
+      if (existsSync(ACCOUNT_REGISTRY)) {
+        const data = readFileSync(ACCOUNT_REGISTRY, 'utf-8');
+        const registry = JSON.parse(data);
+        this.accountRegistry = new Map(Object.entries(registry));
+      }
+    } catch (error) {
+      console.warn('Failed to load credential registry:', error);
+    }
+  }
+
+  /**
+   * Save account registry to disk
+   */
+  private saveAccountRegistry(): void {
+    try {
+      const registryDir = require('path').dirname(ACCOUNT_REGISTRY);
+      if (!require('fs').existsSync(registryDir)) {
+        require('fs').mkdirSync(registryDir, { recursive: true });
+      }
+
+      const registry = Object.fromEntries(this.accountRegistry);
+      writeFileSync(ACCOUNT_REGISTRY, JSON.stringify(registry, null, 2), 'utf-8');
+    } catch (error) {
+      console.error('Failed to save credential registry:', error);
+    }
+  }
+
+  /**
+   * Register an account in the registry
+   */
+  private registerAccount(account: string, type: CredentialType, target?: string): void {
+    this.accountRegistry.set(account, {
+      id: generateId('cred'),
+      type,
+      target,
+      createdAt: new Date().toISOString(),
+    });
+    this.saveAccountRegistry();
+  }
+
+  /**
+   * Unregister an account from the registry
+   */
+  private unregisterAccount(account: string): void {
+    this.accountRegistry.delete(account);
+    this.saveAccountRegistry();
+  }
+
+  /**
+   * List all registered accounts (without exposing the actual values)
+   */
+  async listAccounts(): Promise<CredentialMetadata[]> {
+    return Array.from(this.accountRegistry.values());
+  }
+
+  /**
+   * Get all accounts of a specific type
+   */
+  async getAccountsByType(type: CredentialType): Promise<CredentialMetadata[]> {
+    return Array.from(this.accountRegistry.values()).filter(a => a.type === type);
   }
 
   /**

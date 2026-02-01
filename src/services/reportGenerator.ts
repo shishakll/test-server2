@@ -2,6 +2,7 @@ import { EventEmitter } from 'events';
 import { writeFileSync, mkdirSync, existsSync, readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { tmpdir } from 'os';
+import PDFDocument from 'pdfkit';
 import type { Vulnerability, ScanConfig, ScanState } from '../types';
 import { formatDuration } from '../utils';
 
@@ -105,6 +106,19 @@ export class ReportGenerator extends EventEmitter {
     const sarifPath = join(reportDir, 'report.sarif');
     writeFileSync(sarifPath, JSON.stringify(sarifReport, null, 2), 'utf-8');
     results.files.push({ type: 'sarif', path: sarifPath });
+
+    // Generate PDF report
+    this.emit('progress', { message: 'Generating PDF report...' });
+    const pdfPath = join(reportDir, 'report.pdf');
+    await this.generatePDFReport(
+      pdfPath,
+      reportId,
+      scanState,
+      config,
+      vulnerabilities,
+      stats
+    );
+    results.files.push({ type: 'pdf', path: pdfPath });
 
     this.emit('completed', results);
 
@@ -462,6 +476,131 @@ export class ReportGenerator extends EventEmitter {
     // This is a placeholder - actual implementation would use a ZIP library
     // For now, we'll just return the directory path
     return join(this.outputDirectory, reportId);
+  }
+
+  /**
+   * Generate PDF report
+   */
+  async generatePDFReport(
+    outputPath: string,
+    reportId: string,
+    scanState: ScanState,
+    config: ScanConfig,
+    vulnerabilities: Vulnerability[],
+    stats: VulnerabilityStats
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const doc = new PDFDocument({ margin: 50, size: 'A4' });
+      const stream = doc.pipe(require('fs').createWriteStream(outputPath));
+
+      doc.on('finish', resolve);
+      doc.on('error', reject);
+
+      const fs = require('fs');
+      const outputStream = fs.createWriteStream(outputPath);
+      doc.pipe(outputStream);
+      doc.fontSize(24).font('Helvetica-Bold').text('Security Scan Report', { align: 'center' });
+      doc.moveDown();
+      doc.fontSize(10).font('Helvetica').text(`Report ID: ${reportId}`, { align: 'center' });
+      doc.text(`Generated: ${new Date().toLocaleString()}`, { align: 'center' });
+      doc.text(`Target: ${config.targetUrl || config.targetHosts?.join(', ') || 'N/A'}`, { align: 'center' });
+      doc.moveDown(2);
+
+      // Summary section
+      doc.fontSize(16).font('Helvetica-Bold').text('Executive Summary');
+      doc.moveDown(0.5);
+
+      const summaryY = doc.y;
+      const boxWidth = 100;
+      const boxHeight = 60;
+      const startX = 50;
+      const gap = 15;
+
+      // Summary boxes
+      const summaryItems = [
+        { label: 'Total', value: stats.total, color: '#1e293b' },
+        { label: 'Critical', value: stats.criticalCount, color: '#dc2626' },
+        { label: 'High', value: stats.highCount, color: '#ea580c' },
+        { label: 'Medium', value: stats.mediumCount, color: '#ca8a04' },
+        { label: 'Low', value: stats.lowCount, color: '#16a34a' },
+      ];
+
+      let currentX = startX;
+      for (const item of summaryItems) {
+        doc.rect(currentX, summaryY, boxWidth, boxHeight).stroke('#e2e8f0');
+        doc.fontSize(24).font('Helvetica-Bold').fillColor(item.color).text(item.value.toString(), currentX + 10, summaryY + 15);
+        doc.fontSize(10).font('Helvetica').fillColor('#64748b').text(item.label, currentX + 10, summaryY + 40);
+        currentX += boxWidth + gap;
+      }
+
+      doc.fillColor('#000').moveDown(3);
+
+      // Scan details
+      doc.fontSize(14).font('Helvetica-Bold').text('Scan Details');
+      doc.moveDown(0.5);
+      doc.fontSize(10).font('Helvetica');
+      doc.text(`Scan Duration: ${formatDuration(scanState.duration || 0)}`);
+      doc.text(`URLs Discovered: ${scanState.urlsDiscovered}`);
+      doc.text(`ZAP Alerts Found: ${scanState.alertsFound}`);
+      doc.text(`Nuclei Findings: ${scanState.nucleiFindings}`);
+      doc.moveDown();
+
+      // Vulnerabilities by source
+      doc.fontSize(14).font('Helvetica-Bold').text('Vulnerabilities by Source');
+      doc.moveDown(0.5);
+      doc.fontSize(10).font('Helvetica');
+      for (const [source, count] of Object.entries(stats.bySource)) {
+        if (count > 0) {
+          doc.text(`${source.toUpperCase()}: ${count} vulnerabilities`);
+        }
+      }
+      doc.moveDown(2);
+
+      // Vulnerability list
+      doc.fontSize(14).font('Helvetica-Bold').text('Vulnerability Details');
+      doc.moveDown(0.5);
+
+      const severityColors: Record<string, string> = {
+        critical: '#dc2626',
+        high: '#ea580c',
+        medium: '#ca8a04',
+        low: '#16a34a',
+        informational: '#6b7280',
+      };
+
+      // Group by severity
+      const severityOrder = ['critical', 'high', 'medium', 'low', 'informational'];
+      for (const severity of severityOrder) {
+        const vulns = vulnerabilities.filter(v => v.severity === severity);
+        if (vulns.length === 0) continue;
+
+        if (doc.y > 700) {
+          doc.addPage();
+        }
+
+        doc.fontSize(12).font('Helvetica-Bold').fillColor(severityColors[severity]).text(`${severity.toUpperCase()} (${vulns.length})`);
+        doc.fontSize(9).font('Helvetica').fillColor('#000');
+
+        for (const vuln of vulns.slice(0, 10)) { // Limit to 10 per severity
+          doc.text(`• ${vuln.name}`, { indent: 10 });
+          doc.fontSize(8).fillColor('#64748b').text(`  URL: ${this.truncate(vuln.url || 'N/A', 80)}`, { indent: 15 });
+          if (vuln.cwe) doc.text(`  CWE: ${vuln.cwe}`, { indent: 15 });
+          doc.fillColor('#000').fontSize(9);
+        }
+
+        if (vulns.length > 10) {
+          doc.fontSize(8).fillColor('#64748b').text(`  ... and ${vulns.length - 10} more`, { indent: 15 });
+        }
+
+        doc.moveDown(0.5);
+      }
+
+      // Footer
+      doc.moveDown(2);
+      doc.fontSize(8).fillColor('#94a3b8').text('Generated by Electron Security Scanner', { align: 'center' });
+
+      doc.end();
+    });
   }
 
   /**
